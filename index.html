@@ -29,7 +29,17 @@
   <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
   <audio id="bgm" src="bgm.mp3" loop></audio>
+  <button id="switchBtn" style="
+  position: absolute;
+  z-index: 10;
+  top: 10px;
+  right: 10px;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
+    ">カメラ切替</button>
 
+  
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -47,20 +57,27 @@
       await faceapi.nets.tinyFaceDetector.loadFromUri('./models/tiny_face_detector');
     }
 
-    // async function startCamera() {
-    //   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    //   video.srcObject = stream;
-    //   await new Promise(resolve => video.onloadedmetadata = resolve);
-    // }
-  async function startCamera() {
+  let useFrontCamera = false; // false = 外カメラ, true = 内カメラ
+let currentStream;
+
+async function startCamera() {
+  if (currentStream) {
+    // 既存のストリームがあれば停止
+    currentStream.getTracks().forEach(track => track.stop());
+  }
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } }
-    });
-    video.srcObject = stream;
+    const constraints = {
+      video: {
+        facingMode: useFrontCamera ? "user" : "environment"
+      }
+    };
+
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = currentStream;
   } catch (err) {
-    console.error("カメラが使えません:", err);
-    alert("カメラのアクセスがブロックされています。ブラウザ設定を確認してください。");
+    console.error("カメラの起動に失敗:", err);
+    alert("カメラを起動できませんでした。設定をご確認ください。");
   }
 }
 
@@ -144,6 +161,12 @@
       await startCamera();
       render();
     });
+    
+    document.getElementById('switchBtn').addEventListener('click', () => {
+  useFrontCamera = !useFrontCamera;
+  startCamera(); // カメラを切り替える
+});
+
   </script>
 </body>
 </html>
