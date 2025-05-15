@@ -159,6 +159,37 @@ async function startCamera() {
   startCamera(); // カメラを切り替える
 });
 
+    let selectedFaceBox = null;
+
+async function detectAndFollowFace() {
+  const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+
+  if (result) {
+    selectedFaceBox = result.box; // 毎回顔の位置を更新
+  }
+
+  if (selectedFaceBox) {
+    const { x, y, width, height } = selectedFaceBox;
+    const zoom = 2.5;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.drawImage(
+      video,
+      x, y, width, height,
+      canvas.width / 2 - (width * zoom) / 2,
+      canvas.height / 2 - (height * zoom) / 2,
+      width * zoom,
+      height * zoom
+    );
+  }
+
+  requestAnimationFrame(detectAndFollowFace);
+}
+
+
   </script>
 </body>
 </html>
