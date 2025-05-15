@@ -5,15 +5,25 @@
   <title>顔ズームカメラ（クロスフェード付き）</title>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
-    body { margin: 0; overflow: hidden; background: black; }
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 640px;
-      height: 480px;
-    }
-  </style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: black;
+    width: 100%;
+    height: 100%;
+  }
+
+  video, canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    object-fit: cover; /* アスペクト比を保ったまま拡大 */
+    width: 100vw;
+    height: 100vh;
+  }
+</style>
+
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
@@ -37,12 +47,24 @@
       await faceapi.nets.tinyFaceDetector.loadFromUri('./models/tiny_face_detector');
     }
 
-    async function startCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      await new Promise(resolve => video.onloadedmetadata = resolve);
-    }
+    // async function startCamera() {
+    //   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    //   video.srcObject = stream;
+    //   await new Promise(resolve => video.onloadedmetadata = resolve);
+    // }
+  async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }
+    });
+    video.srcObject = stream;
+  } catch (err) {
+    console.error("カメラが使えません:", err);
+    alert("カメラのアクセスがブロックされています。ブラウザ設定を確認してください。");
+  }
+}
 
+    
     async function detectRandomFace() {
       const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 });
       const detections = await faceapi.detectAllFaces(video, options);
