@@ -5,33 +5,41 @@
   <title>顔ズームカメラ（クロスフェード付き）</title>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: black;
-    width: 100%;
-    height: 100%;
-  }
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      width: 100%;
+      height: 100%;
+    }
 
-  video, canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    object-fit: cover; /* アスペクト比を保ったまま拡大 */
-    width: 100vw;
-    height: 100vh;
-  }
-</style>
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      object-fit: cover;
+      width: 100vw;
+      height: 100vh;
+    }
 
+    #switchBtn {
+      position: absolute;
+      z-index: 10;
+      top: 10px;
+      right: 10px;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 8px;
+    }
+  </style>
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
   <audio id="bgm" src="bgm.mp3" loop></audio>
-  <button id="switchBtn" style="position: absolute; z-index: 10; top: 10px; right: 10px; padding: 10px; font-size: 16px; border-radius: 8px;">カメラ切替</button>
+  <button id="switchBtn">カメラ切替</button>
 
-  
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -45,35 +53,32 @@
     let zoomDuration = 3000;
     let zoomStartTime = null;
 
+    let useFrontCamera = false;
+    let currentStream;
+
     async function loadModels() {
       await faceapi.nets.tinyFaceDetector.loadFromUri('./models/tiny_face_detector');
     }
 
-  let useFrontCamera = false; // false = 外カメラ, true = 内カメラ
-let currentStream;
-
-async function startCamera() {
-  if (currentStream) {
-    // 既存のストリームがあれば停止
-    currentStream.getTracks().forEach(track => track.stop());
-  }
-
-  try {
-    const constraints = {
-      video: {
-        facingMode: useFrontCamera ? "user" : "environment"
+    async function startCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
       }
-    };
 
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = currentStream;
-  } catch (err) {
-    console.error("カメラの起動に失敗:", err);
-    alert("カメラを起動できませんでした。設定をご確認ください。");
-  }
-}
+      try {
+        const constraints = {
+          video: {
+            facingMode: useFrontCamera ? "user" : "environment"
+          }
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+      } catch (err) {
+        console.error("カメラ起動エラー:", err);
+        alert("カメラを起動できませんでした。");
+      }
+    }
 
-    
     async function detectRandomFace() {
       const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 });
       const detections = await faceapi.detectAllFaces(video, options);
@@ -106,22 +111,34 @@ async function startCamera() {
       ctx.restore();
     }
 
+    function drawFaceBoxes() {
+      const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
+      faceapi.detectAllFaces(video, options).then(faces => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        for (const face of faces) {
+          const { x, y, width, height } = face.box;
+          ctx.strokeStyle = 'lime';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, width, height);
+        }
+      });
+    }
+
     function render(timestamp) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
       if (state === 'idle') {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        drawFaceBoxes();
       } else if (state === 'zooming') {
         const elapsed = timestamp - zoomStartTime;
         const t = Math.min(elapsed / zoomDuration, 1.0);
         zoom = 1.0 + (zoomTarget - 1.0) * easeInOutQuad(t);
 
-        // 背景（通常映像）
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // 上にズーム映像をクロスフェード
-        renderZoomedVideo(zoom, t); // 透明度tでクロスフェード
+        renderZoomedVideo(zoom, t);
 
         if (t >= 1.0) {
           state = 'locked';
@@ -153,64 +170,12 @@ async function startCamera() {
       await startCamera();
       render();
     });
-    
+
     document.getElementById('switchBtn').addEventListener('click', () => {
-  useFrontCamera = !useFrontCamera;
-  startCamera(); // カメラを切り替える
-});
-
-    let selectedFaceBox = null;
-
-async function detectAndFollowFace() {
-  const result = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
-
-  if (result) {
-    selectedFaceBox = result.box; // 毎回顔の位置を更新
-  }
-
-  if (selectedFaceBox) {
-    const { x, y, width, height } = selectedFaceBox;
-    const zoom = 2.5;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.drawImage(
-      video,
-      x, y, width, height,
-      canvas.width / 2 - (width * zoom) / 2,
-      canvas.height / 2 - (height * zoom) / 2,
-      width * zoom,
-      height * zoom
-    );
-  }
-
-  async function drawFaceBoxes() {
-  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
-  const faces = await faceapi.detectAllFaces(video, options);
-
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-
-  for (const face of faces) {
-    const { x, y, width, height } = face.box;
-    context.strokeStyle = 'lime';
-    context.lineWidth = 2;
-    context.strokeRect(x, y, width, height);
-  }
-
-  if (!isZooming) {
-    requestAnimationFrame(drawFaceBoxes);
-  }
-}
-
-
-  requestAnimationFrame(detectAndFollowFace);
-}
-
-
+      useFrontCamera = !useFrontCamera;
+      startCamera();
+    });
   </script>
 </body>
 </html>
+
