@@ -5,9 +5,7 @@
   <title>顔検出カメラ（ズーム対応＋カメラ切替）</title>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
-    body {
-      margin: 0; padding: 0; overflow: hidden;
-    }
+    body { margin: 0; padding: 0; overflow: hidden; background: black; }
     video, canvas {
       position: absolute; top: 0; left: 0;
       width: 100vw; height: 100vh;
@@ -49,19 +47,25 @@
     let stream = null;
     let videoDevices = [];
     let currentDeviceIndex = 0;
+    let cachedFaces = [];
 
     async function getVideoDevices() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       videoDevices = devices.filter(device => device.kind === 'videoinput');
-      console.log('利用可能なカメラ:', videoDevices);
     }
 
     async function setupCamera(deviceId) {
-      if(stream) {
+      if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
 
-      const constraints = deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: {} };
+      const constraints = {
+        video: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          facingMode: "environment"
+        }
+      };
+
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
       return new Promise(resolve => {
@@ -71,7 +75,16 @@
 
     async function loadModels() {
       await faceapi.nets.tinyFaceDetector.loadFromUri('./models/tiny_face_detector');
-      console.log('モデルロード完了');
+      console.log('モデル読み込み完了');
+    }
+
+    function scaleBox(box, scaleX, scaleY) {
+      return {
+        x: box.x * scaleX,
+        y: box.y * scaleY,
+        width: box.width * scaleX,
+        height: box.height * scaleY
+      };
     }
 
     async function detectAllFaces() {
@@ -81,7 +94,7 @@
 
     async function detectRandomFace() {
       const detections = await detectAllFaces();
-      if(detections.length === 0) return null;
+      if (detections.length === 0) return null;
       const idx = Math.floor(Math.random() * detections.length);
       return detections[idx].box;
     }
@@ -91,7 +104,6 @@
       zoom = 1;
       zoomStartTime = performance.now();
       state = 'zooming';
-      console.log('ズーム開始:', box);
     }
 
     function easeInOutQuad(t) {
@@ -99,105 +111,78 @@
     }
 
     function render(timestamp = performance.now()) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const cw = canvas.width = window.innerWidth;
+      const ch = canvas.height = window.innerHeight;
+      const scaleX = cw / vw;
+      const scaleY = ch / vh;
 
-      if(state === 'idle') {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.drawImage(video, 0, 0, cw, ch);
+
+      if (state === 'idle') {
         cachedFaces.forEach(f => {
-          const { x, y, width, height } = f.box;
+          const box = scaleBox(f.box, scaleX, scaleY);
           ctx.strokeStyle = 'lime';
           ctx.lineWidth = 2;
-          ctx.strokeRect(x, y, width, height);
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
         });
-      } else if(state === 'zooming') {
-        const elapsed = timestamp - zoomStartTime;
-        const t = Math.min(elapsed / zoomDuration, 1);
+      } else if (state === 'zooming' || state === 'locked') {
+        const b = scaleBox(faceBox, scaleX, scaleY);
+        const t = state === 'zooming' ? Math.min((timestamp - zoomStartTime) / zoomDuration, 1) : 1;
         zoom = 1 + (zoomTarget - 1) * easeInOutQuad(t);
 
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const zx = cw / 2 - (b.width * zoom) / 2;
+        const zy = ch / 2 - (b.height * zoom) / 2;
 
-        const { x, y, width, height } = faceBox;
-        const zoomedWidth = width * zoom;
-        const zoomedHeight = height * zoom;
+        ctx.drawImage(video,
+          b.x / scaleX, b.y / scaleY, b.width / scaleX, b.height / scaleY,
+          zx, zy, b.width * zoom, b.height * zoom);
 
-        ctx.save();
         ctx.strokeStyle = 'red';
         ctx.lineWidth = 3;
-        ctx.drawImage(video,
-          x, y, width, height,
-          canvas.width / 2 - zoomedWidth / 2,
-          canvas.height / 2 - zoomedHeight / 2,
-          zoomedWidth, zoomedHeight);
-        ctx.strokeRect(
-          canvas.width / 2 - zoomedWidth / 2,
-          canvas.height / 2 - zoomedHeight / 2,
-          zoomedWidth,
-          zoomedHeight);
-        ctx.restore();
+        ctx.strokeRect(zx, zy, b.width * zoom, b.height * zoom);
 
-        if(t >= 1) {
+        if (state === 'zooming' && t >= 1) {
           state = 'locked';
-          console.log('ズーム完了');
         }
-      } else if(state === 'locked') {
-        const { x, y, width, height } = faceBox;
-        const zoomedWidth = width * zoomTarget;
-        const zoomedHeight = height * zoomTarget;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(video,
-          x, y, width, height,
-          canvas.width / 2 - zoomedWidth / 2,
-          canvas.height / 2 - zoomedHeight / 2,
-          zoomedWidth,
-          zoomedHeight);
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(
-          canvas.width / 2 - zoomedWidth / 2,
-          canvas.height / 2 - zoomedHeight / 2,
-          zoomedWidth,
-          zoomedHeight);
       }
 
       requestAnimationFrame(render);
     }
 
-    let cachedFaces = [];
     async function updateFacesPeriodically() {
-      while(true) {
-        cachedFaces = await detectAllFaces();
-        await new Promise(r => setTimeout(r, 500)); // 0.5秒毎に検出
+      while (true) {
+        if (state === 'idle') {
+          cachedFaces = await detectAllFaces();
+        }
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 
     canvas.addEventListener('click', async () => {
-      console.log('クリックされました');
-      if(state === 'idle') {
+      if (state === 'idle') {
         const face = await detectRandomFace();
-        console.log('検出された顔:', face);
-        if(face) startZoom(face);
-        else console.log('顔が検出されませんでした');
-      } else if(state === 'locked') {
+        if (face) startZoom(face);
+      } else if (state === 'locked') {
         state = 'idle';
       }
     });
 
     switchBtn.addEventListener('click', async () => {
-      if(videoDevices.length < 2) {
-        console.log('カメラが2台以上ありません');
+      if (videoDevices.length < 2) {
+        alert('カメラが2台以上検出されませんでした');
         return;
       }
       currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
-      console.log('カメラ切替:', videoDevices[currentDeviceIndex].label);
       await setupCamera(videoDevices[currentDeviceIndex].deviceId);
     });
 
     async function main() {
       await loadModels();
       await getVideoDevices();
-      if(videoDevices.length === 0) {
+      if (videoDevices.length === 0) {
         alert('カメラが見つかりません');
         return;
       }
