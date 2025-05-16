@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>顔検出カメラ（ズーム対応）</title>
+  <title>顔検出カメラ（ズーム対応＋カメラ切替）</title>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
     body {
@@ -13,9 +13,23 @@
       width: 100vw; height: 100vh;
       object-fit: cover;
     }
+    #switchBtn {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      padding: 8px 16px;
+      font-size: 16px;
+      cursor: pointer;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
+  <button id="switchBtn">カメラ切替</button>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="overlay"></canvas>
 
@@ -23,6 +37,7 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('overlay');
     const ctx = canvas.getContext('2d');
+    const switchBtn = document.getElementById('switchBtn');
 
     let state = 'idle'; // idle, zooming, locked
     let faceBox = null;
@@ -31,11 +46,23 @@
     let zoomDuration = 3000;
     let zoomStartTime = null;
 
-    // 顔検出結果をここにキャッシュ
-    let cachedFaces = [];
+    let stream = null;
+    let videoDevices = [];
+    let currentDeviceIndex = 0;
 
-    async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+    async function getVideoDevices() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = devices.filter(device => device.kind === 'videoinput');
+      console.log('利用可能なカメラ:', videoDevices);
+    }
+
+    async function setupCamera(deviceId) {
+      if(stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = deviceId ? { video: { deviceId: { exact: deviceId } } } : { video: {} };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
       return new Promise(resolve => {
         video.onloadedmetadata = () => resolve(video);
@@ -71,11 +98,9 @@
       return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     }
 
-    // 毎フレーム描画関数
-    function render(timestamp) {
+    function render(timestamp = performance.now()) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if(state === 'idle') {
@@ -139,36 +164,50 @@
       requestAnimationFrame(render);
     }
 
-    // 顔検出を定期実行してキャッシュを更新
+    let cachedFaces = [];
     async function updateFacesPeriodically() {
       while(true) {
         cachedFaces = await detectAllFaces();
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 500)); // 0.5秒毎に検出
       }
     }
 
     canvas.addEventListener('click', async () => {
+      console.log('クリックされました');
       if(state === 'idle') {
         const face = await detectRandomFace();
+        console.log('検出された顔:', face);
         if(face) startZoom(face);
+        else console.log('顔が検出されませんでした');
       } else if(state === 'locked') {
         state = 'idle';
       }
     });
 
+    switchBtn.addEventListener('click', async () => {
+      if(videoDevices.length < 2) {
+        console.log('カメラが2台以上ありません');
+        return;
+      }
+      currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length;
+      console.log('カメラ切替:', videoDevices[currentDeviceIndex].label);
+      await setupCamera(videoDevices[currentDeviceIndex].deviceId);
+    });
+
     async function main() {
       await loadModels();
-      await setupCamera();
+      await getVideoDevices();
+      if(videoDevices.length === 0) {
+        alert('カメラが見つかりません');
+        return;
+      }
+      await setupCamera(videoDevices[currentDeviceIndex].deviceId);
       video.play();
-
-      // ここでawaitつけて確実に開始する
       updateFacesPeriodically();
-
-      requestAnimationFrame(render);
+      render();
     }
 
     main();
-
   </script>
 </body>
 </html>
