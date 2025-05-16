@@ -68,6 +68,20 @@
       detectFaces();
     }
 
+    canvas.addEventListener('click', async () => {
+  console.log('クリックされました');
+  if (state === 'idle') {
+    const face = await detectRandomFace();
+    console.log('検出された顔:', face);
+    if (face) startZoom(face);
+    else console.log('顔が検出されませんでした');
+  } else if (state === 'locked') {
+    state = 'idle';
+    bgm.pause();
+  }
+});
+
+
     main();
   </script>
 </body>
