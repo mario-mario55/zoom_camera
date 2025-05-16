@@ -186,6 +186,27 @@ async function detectAndFollowFace() {
     );
   }
 
+  async function drawFaceBoxes() {
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224 });
+  const faces = await faceapi.detectAllFaces(video, options);
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  for (const face of faces) {
+    const { x, y, width, height } = face.box;
+    context.strokeStyle = 'lime';
+    context.lineWidth = 2;
+    context.strokeRect(x, y, width, height);
+  }
+
+  if (!isZooming) {
+    requestAnimationFrame(drawFaceBoxes);
+  }
+}
+
+
   requestAnimationFrame(detectAndFollowFace);
 }
 
