@@ -68,104 +68,89 @@
       return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     }
 
-    function render(timestamp) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+   function render(timestamp = performance.now()) {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if(state === 'idle') {
-        // 顔枠を描画
-        detectAllFaces().then(faces => {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          faces.forEach(f => {
-            const { x, y, width, height } = f.box;
-            ctx.strokeStyle = 'lime';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x, y, width, height);
-          });
-        });
-      } else if(state === 'zooming') {
-        const elapsed = timestamp - zoomStartTime;
-        const t = Math.min(elapsed / zoomDuration, 1);
-        zoom = 1 + (zoomTarget - 1) * easeInOutQuad(t);
-
-        // ベース映像を描画
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // ズーム対象顔を拡大して中央に表示
-        const { x, y, width, height } = faceBox;
-        const zoomedWidth = width * zoom;
-        const zoomedHeight = height * zoom;
-        ctx.save();
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 3;
-
-        ctx.drawImage(
-          video,
-          x, y, width, height,
-          canvas.width/2 - zoomedWidth/2,
-          canvas.height/2 - zoomedHeight/2,
-          zoomedWidth,
-          zoomedHeight
-        );
-        ctx.strokeRect(
-          canvas.width/2 - zoomedWidth/2,
-          canvas.height/2 - zoomedHeight/2,
-          zoomedWidth,
-          zoomedHeight
-        );
-        ctx.restore();
-
-        if(t >= 1) {
-          state = 'locked';
-          console.log('ズーム完了');
-        }
-      } else if(state === 'locked') {
-        // ズーム固定表示
-        const { x, y, width, height } = faceBox;
-        const zoomedWidth = width * zoomTarget;
-        const zoomedHeight = height * zoomTarget;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(
-          video,
-          x, y, width, height,
-          canvas.width/2 - zoomedWidth/2,
-          canvas.height/2 - zoomedHeight/2,
-          zoomedWidth,
-          zoomedHeight
-        );
-        ctx.strokeStyle = 'red';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(
-          canvas.width/2 - zoomedWidth/2,
-          canvas.height/2 - zoomedHeight/2,
-          zoomedWidth,
-          zoomedHeight
-        );
-      }
-
-      requestAnimationFrame(render);
-    }
-
-    canvas.addEventListener('click', async () => {
-      console.log('クリックされました');
-      if(state === 'idle') {
-        const face = await detectRandomFace();
-        console.log('検出された顔:', face);
-        if(face) startZoom(face);
-        else console.log('顔が検出されませんでした');
-      } else if(state === 'locked') {
-        state = 'idle';
-      }
+  if(state === 'idle') {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    cachedFaces.forEach(f => {
+      const { x, y, width, height } = f.box;
+      ctx.strokeStyle = 'lime';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, width, height);
     });
+  } else if(state === 'zooming') {
+    const elapsed = timestamp - zoomStartTime;
+    const t = Math.min(elapsed / zoomDuration, 1);
+    zoom = 1 + (zoomTarget - 1) * easeInOutQuad(t);
 
-    async function main() {
-      await loadModels();
-      await setupCamera();
-      video.play();
-      render();
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const { x, y, width, height } = faceBox;
+    const zoomedWidth = width * zoom;
+    const zoomedHeight = height * zoom;
+
+    ctx.save();
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
+    ctx.drawImage(video,
+      x, y, width, height,
+      canvas.width / 2 - zoomedWidth / 2,
+      canvas.height / 2 - zoomedHeight / 2,
+      zoomedWidth, zoomedHeight);
+    ctx.strokeRect(
+      canvas.width / 2 - zoomedWidth / 2,
+      canvas.height / 2 - zoomedHeight / 2,
+      zoomedWidth,
+      zoomedHeight);
+    ctx.restore();
+
+    if(t >= 1) {
+      state = 'locked';
+      console.log('ズーム完了');
     }
+  } else if(state === 'locked') {
+    const { x, y, width, height } = faceBox;
+    const zoomedWidth = width * zoomTarget;
+    const zoomedHeight = height * zoomTarget;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video,
+      x, y, width, height,
+      canvas.width / 2 - zoomedWidth / 2,
+      canvas.height / 2 - zoomedHeight / 2,
+      zoomedWidth,
+      zoomedHeight);
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(
+      canvas.width / 2 - zoomedWidth / 2,
+      canvas.height / 2 - zoomedHeight / 2,
+      zoomedWidth,
+      zoomedHeight);
+  }
+
+  requestAnimationFrame(render);
+}
+
+let cachedFaces = [];
+async function updateFacesPeriodically() {
+  while(true) {
+    cachedFaces = await detectAllFaces();
+    await new Promise(r => setTimeout(r, 500)); // 0.5秒毎に検出
+  }
+}
+
+async function main() {
+  await loadModels();
+  await setupCamera();
+  video.play();
+  updateFacesPeriodically();
+  render();
+}
+
 
     main();
   </script>
