@@ -54,17 +54,30 @@
       videoDevices = devices.filter(device => device.kind === 'videoinput');
     }
 
-    async function setupCamera(deviceId) {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+ async function setupCamera(deviceId) {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
 
-      const constraints = {
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          facingMode: "environment"
-        }
-      };
+  const constraints = {
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: 640 }, // 解像度制限
+      height: { ideal: 480 }
+    }
+  };
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    return new Promise(resolve => {
+      video.onloadedmetadata = () => resolve(video);
+    });
+  } catch (err) {
+    console.error("カメラ起動エラー:", err);
+  }
+}
+
 
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
